@@ -1,14 +1,16 @@
-const Vendor = require('../models/vendor');
-require('dotenv').config();
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const Vendor = require('../models/vendor');
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const securePassword = async (password) => {
     try {
         const passwordHash = await bcryptjs.hash(password, 10);
         return passwordHash;
     } catch (error) {
-        console.log("Error in securing password:", error);
+        console.error("Error in securing password:", error);
+        throw error;
     }
 }
 
@@ -20,18 +22,18 @@ const generateAuthToken = (vendor) => {
 const register_vendor = async (req, res) => {
     try {
         const { email, password } = req.body;
-        const vendorData = await Vendor.findOne({ email });
-        if (vendorData) {
+        const existingVendor = await Vendor.findOne({ email });
+        if (existingVendor) {
             return res.status(401).json({ success: false, msg: "This email is already registered. Please use another email." });
         }
         const safePassword = await securePassword(password);
 
-        const vendor = await Vendor.create({
+        const vendor = new Vendor({
             email,
             password: safePassword,
         });
-        const vendor_data = await vendor.save();
-        return res.status(201).json({ success: true, message: 'Vendor registered successfully.', data: vendor_data });
+        const savedVendor = await vendor.save();
+        return res.status(201).json({ success: true, message: 'Vendor registered successfully.', data: savedVendor });
     } catch (error) {
         if (error.name === 'MongoError' && error.code === 11000) {
             return res.status(400).json({ success: false, msg: 'Duplicate key error. Email already exists.' });
@@ -52,7 +54,7 @@ const login_vendor = async (req, res) => {
 
         const isPasswordValid = await bcryptjs.compare(password, vendor.password);
         if (!isPasswordValid) {
-            return res.status(401).json({ success: false, msg: 'Incorrect email or password please check' });
+            return res.status(401).json({ success: false, msg: 'Incorrect email or password. Please check.' });
         }
 
         const token = generateAuthToken(vendor);
@@ -73,34 +75,34 @@ const vendor_address = async (req, res) => {
         const vendorId = req.vendorId;
 
         if (!vendorId) {
-            return res.status(400).json({ success: false, msg: 'vendor ID is required' });
+            return res.status(400).json({ success: false, msg: 'Vendor ID is required' });
         }
 
-        const existingvendor = await vendor.findById(vendorId);
+        const existingVendor = await Vendor.findById(vendorId);
 
-        if (!existingvendor) {
-            return res.status(404).json({ success: false, msg: 'vendor not found' });
+        if (!existingVendor) {
+            return res.status(404).json({ success: false, msg: 'Vendor not found' });
         }
 
         const updatedFields = {
-            name: req.body.name || existingvendor.name,
-            mobile: req.body.mobile || existingvendor.mobile,
+            name: req.body.name || existingVendor.name,
+            mobile: req.body.mobile || existingVendor.mobile,
             address: {
-                street: req.body.address.street || existingvendor.address.street,
-                city: req.body.address.city || existingvendor.address.city,
-                state: req.body.address.state || existingvendor.address.state,
-                country: req.body.address.country || existingvendor.address.country,
-                zip: req.body.address.zip || existingvendor.address.zip
+                street: req.body.address.street || existingVendor.address.street,
+                city: req.body.address.city || existingVendor.address.city,
+                state: req.body.address.state || existingVendor.address.state,
+                country: req.body.address.country || existingVendor.address.country,
+                zip: req.body.address.zip || existingVendor.address.zip
             }
         };
 
-        const updatedvendor = await vendor.findByIdAndUpdate(vendorId, updatedFields, { new: true });
+        const updatedVendor = await Vendor.findByIdAndUpdate(vendorId, updatedFields, { new: true });
 
-        if (!updatedvendor) {
+        if (!updatedVendor) {
             return res.status(500).json({ success: false, msg: 'Failed to update vendor' });
         }
 
-        return res.status(200).json({ success: true, msg: 'vendor data saved successfully.', data: updatedFields });
+        return res.status(200).json({ success: true, msg: 'Vendor data saved successfully.', data: updatedFields });
     } catch (error) {
         console.error('Error in saving vendor data:', error);
         return res.status(500).json({ success: false, message: 'Internal Server Error' });
@@ -118,7 +120,7 @@ const logout_vendor = async (req, res) => {
             message: 'Vendor logout successful'
         });
     } catch (error) {
-        console.log('Error in vendor logout', error);
+        console.error('Error in vendor logout', error);
         res.status(500).json({
             success: false,
             message: 'Internal Server Error'
@@ -131,8 +133,7 @@ const changePassword = async (req, res) => {
     try {
         const { oldPassword, newPassword } = req.body;
         const vendor = req.vendor; 
-        console.log("req.body",  req.body);
-        console.log("vendor", vendor);
+
         const isMatch = await bcryptjs.compare(oldPassword, vendor.password);
 
         if (!isMatch) {
@@ -150,15 +151,12 @@ const changePassword = async (req, res) => {
 
 const forgetPassword = async (req, res) => {
     try {
-
-        console.log("forget password",req.body);
         const { email } = req.body;
-        console.log(email);
 
-        const vendor = await Vendor.findOne({ email: email });
+        const vendor = await Vendor.findOne({ email });
 
         if (!vendor) {
-            return res.status(404).json({ success: false, message: 'vendor not found' });
+            return res.status(404).json({ success: false, message: 'Vendor not found' });
         }
 
         const secret = process.env.SECRET_KEY + vendor.password;
@@ -171,16 +169,14 @@ const forgetPassword = async (req, res) => {
         const token = jwt.sign(payload, secret, { expiresIn: '10m' });
         const resetLink = `http://localhost:3000/vendor/reset-password/${vendor._id}/${token}`;
 
-        console.log(resetLink);
-
         const emailSubject = 'Password Reset';
         const emailBody = `<p>Hi ${vendor.name},</p>
                             <p>Please click the link below to reset your password:</p>
                             <p>This Link is valid for one time and for 10 mins only</p>
- <a href="${resetLink}">${resetLink}</a>`;
+                            <a href="${resetLink}">${resetLink}</a>`;
 
         const mailOptions = {
-            from: process.env.EMAIL_vendor,
+            from: process.env.EMAIL_VENDOR,
             to: vendor.email,
             subject: emailSubject,
             html: emailBody
@@ -190,13 +186,13 @@ const forgetPassword = async (req, res) => {
             port: 465,
             secure: true,
             auth: {
-                vendor: process.env.EMAIL_vendor,
+                vendor: process.env.EMAIL_VENDOR,
                 pass: process.env.EMAIL_PASSWORD
             }
         });
 
-       const info=  await transporter.sendMail(mailOptions);
-       console.log("Mail has been sent:-" ,info.response);
+        const info = await transporter.sendMail(mailOptions);
+        console.log("Mail has been sent:-", info.response);
 
         res.status(200).json({ success: true, message: 'Please check your inbox for the password reset link.' });
     } catch (error) {
@@ -222,12 +218,11 @@ const resetPassword = async (req, res) => {
         const vendor = await Vendor.findOne({ _id: id });
 
         if (!vendor) {
-            return res.status(404).json({ success: false, message: 'vendor not found' });
+            return res.status(404).json({ success: false, message: 'Vendor not found' });
         }
 
         const secret = process.env.SECRET_KEY + vendor.password;
         const decoded = jwt.verify(token, secret);
-
 
         if (id !== decoded.id) {
             return res.status(400).json({ success: false, message: 'Invalid vendor ID in the token' });
@@ -243,7 +238,6 @@ const resetPassword = async (req, res) => {
         } else if (error.name === 'JsonWebTokenError') {
             return res.status(400).json({ success: false, message: 'Invalid token' });
         }
-
         console.error('Error in resetting password:', error);
         res.status(500).json({ success: false, message: 'Internal Server Error' });
     }
@@ -271,5 +265,13 @@ const vendor_location = async (req, res) => {
     }
 };
 
-
-module.exports = { register_vendor, login_vendor, vendor_address,changePassword, logout_vendor, vendor_location,forgetPassword,resetPassword };
+module.exports = { 
+    register_vendor, 
+    login_vendor, 
+    vendor_address,
+    changePassword, 
+    logout_vendor, 
+    vendor_location,
+    forgetPassword,
+    resetPassword 
+};
