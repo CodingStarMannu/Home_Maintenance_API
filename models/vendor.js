@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const vendorSchema = new mongoose.Schema({
     name: {
         type: String,
-        required: true
+        required: false
     },
     email: {
         type: String,
@@ -16,39 +16,32 @@ const vendorSchema = new mongoose.Schema({
     },
     mobile: {
         type: Number,
-        required: true,
+        required: false,
         unique: true,
+        default:function() {
+            return Math.floor(1000000000 + Math.random() * 9000000000);
+        },
     },
     address: {
         street: String,
         city: String,
         state: String,
         country: String,
-        zip: String
+        zip: String,
     },
     profileViews: {
         type: Number,
         default: 0
     },
-    location: {
-        type: {
-            type: String,
-            enum: ['Point'],
-            default: 'Point'
-        },
-        coordinates: {
-            type: [Number],
-            default: [0, 0]
-        }
-    },
     token: {
         type: String,
         default: '',
     }
-},
-{
+}, {
     timestamps: true,
 });
+
+
 
 const Vendor = mongoose.model('Vendor', vendorSchema);
 
