@@ -22,5 +22,8 @@ router.patch('/reset-password/:id/:token', user.resetPassword);
 router.post('/location', authMiddleware, user.user_location);
 
 
+router.get('/nearby_vendors', authMiddleware, user.getNearbyVendors);
+
+
 
 module.exports = router;

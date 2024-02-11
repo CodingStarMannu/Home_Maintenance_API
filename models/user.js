@@ -18,6 +18,9 @@ const userSchema = new mongoose.Schema({
         type: Number,
         required: false,
         unique: true,
+        default:function() {
+            return Math.floor(1000000000 + Math.random() * 9000000000);
+        },
     },
     address: {
         street: String,
